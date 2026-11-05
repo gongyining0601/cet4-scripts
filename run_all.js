@@ -42,6 +42,10 @@ const TESTS = [
   { f: 'verify_bank.js', g: 'core', min: 5, d: '题库完整性校验' },
   { f: 'verify_fixes.js', g: 'core', min: 5, d: '历史修复回归校验' },
   { f: 'verify_fix_report.js', g: 'core', min: 1, d: '修复报告生成/自检' },
+  { f: 'test_sync.js', g: 'core', min: 30, d: '私有同步：合并算法 + 端点并发/恢复闭环' },
+  { f: 'test_version_sync.js', g: 'core', min: 6, d: '三方版本号 + SW 外壳/CSP 一致性闸门' },
+  { f: 'check_divergence.js', g: 'core', min: 20, d: '双项目防漏修：共享内核字节一致 + 修复点清单' },
+  { f: 'verify_assets.js', g: 'core', min: 8, d: '素材指纹 + bank/json ↔ meta.js 副本一致性' },
 
   /* --- 浏览器：功能与交互 --- */
   { f: 'test_e2e.js', g: 'browser', min: 20, d: '端到端主流程' },
