@@ -16,11 +16,15 @@
      node run_all.js --only=security     # 文件名含 security
      node run_all.js --timeout=600000    # 单个用例超时（毫秒），默认 480000
      node run_all.js --list              # 只列清单不执行
+     node run_all.js --require-version=cet4-v15   # 版本不符则 exit 4，产物不冒充该版本
 
-   产物：docs/run-all-result.json
+   产物：docs/run-all-result.json —— 含 meta.version / meta.hashes / meta.gitHead，
+        让"一份回归证据"绑定当时被测的代码版本；发布前用 --require-version 校验，
+        避免再出现"拿 v13 的绿灯证明 v15 能发"的错误（测评 CET4 版证据错位问题）。
    ============================================================================ */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 /* 注意：**不要用 spawnSync**。本机环境下 spawnSync 一律以 EBUSY 立即失败
    （与 timeout/cwd/encoding/maxBuffer 参数无关，异步 spawn 正常），
@@ -100,6 +104,57 @@ const GROUP = argOf('group') || 'all';
 const ONLY = argOf('only');
 const TIMEOUT = Number(argOf('timeout') || 480000);
 const LIST_ONLY = argv.includes('--list');
+const REQUIRE_VERSION = argOf('require-version');
+
+/* ------------------------------ 发布证据绑定 ------------------------------
+   结果 JSON 必须能回答"这是哪个版本、哪份代码跑出来的"。
+   无 git 也能跑：gitHead 记 null，version/hashes 仍绑定，不因环境缺 git 就假绿。 */
+function gitHeadOf(dir) {
+  try {
+    const out = require('child_process').execFileSync('git', ['rev-parse', 'HEAD'],
+      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 });
+    return String(out).trim() || null;
+  } catch (e) { return null; }
+}
+function readVersion() {
+  try {
+    const s = fs.readFileSync(path.join(ROOT, 'app', 'version.js'), 'utf8');
+    const m = /(?:CET4|CET6)_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(s);
+    return m ? m[1] : null;
+  } catch (e) { return null; }
+}
+function fileHash(rel) {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex');
+  } catch (e) { return null; }
+}
+const FINGERPRINT_FILES = [
+  'app/version.js', 'app/index.html', 'app/core.js', 'app/sw.js',
+  'app/sync.js', 'app/sync-config.js', 'scripts/sync-server.js',
+  'scripts/run_all.js', 'scripts/check_divergence.js'
+];
+function collectMeta() {
+  const hashes = {};
+  FINGERPRINT_FILES.forEach(function (rel) { hashes[rel] = fileHash(rel); });
+  return {
+    version: readVersion(),
+    hashes: hashes,
+    gitHead: {
+      root: gitHeadOf(ROOT),
+      app: gitHeadOf(path.join(ROOT, 'app')),
+      scripts: gitHeadOf(path.join(ROOT, 'scripts')),
+    },
+    capturedAt: new Date().toISOString(),
+  };
+}
+const META = collectMeta();
+
+// 版本不符：exit 4，并在写 JSON 之前就挡住，避免产物冒充目标版本。
+if (REQUIRE_VERSION && META.version !== REQUIRE_VERSION) {
+  console.error('版本不符：当前 app/version.js = ' + (META.version || '(读取失败)') +
+    '，要求 --require-version=' + REQUIRE_VERSION + '。拒绝运行并拒绝写产物。');
+  process.exit(4);
+}
 
 const picked = TESTS.filter(t => {
   if (GROUP !== 'all' && t.g !== GROUP) return false;
@@ -243,6 +298,7 @@ function runOne(t) {
   try {
     fs.writeFileSync(path.join(DOCS, 'run-all-result.json'), JSON.stringify({
       ts: new Date().toISOString(), group: GROUP, only: ONLY || null, timeoutMs: TIMEOUT,
+      meta: META,
       totals: {
         cases: rows.length, pass: passed, assertions: totalAssert, ok: totalOk, fail: totalFail,
         fakeGreen: fake.length, hardFailed: hard.length,
