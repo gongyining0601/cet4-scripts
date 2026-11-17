@@ -273,15 +273,27 @@ log('\n=== 8) streak / heatmap / 遗忘曲线 ===');
 }
 
 /* ------------------------------------------------------------------ 9. esc 等价性（index.html 内联实现复刻） */
-log('\n=== 9) esc() 覆盖范围（与 index.html:440 同实现，验证属性上下文安全性）===');
+log('\n=== 9) esc() 覆盖范围（从 index.html:557 提取生产真身，验证属性上下文安全性）===');
 {
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // B1：从生产源码 index.html 提取 esc 真身并求值，杜绝"测副本"。
+  // 历史：这里曾手写一份 .replace(/[&<>"]/g) 的弱副本并断言"单引号不转义"，
+  // 而生产 esc(:557) 已升级为转义单引号 —— 生产已修、测试仍给旧副本打满分（假绿）。
+  const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'index.html'), 'utf8');
+  const em = htmlSrc.match(/function\s+esc\s*\([^)]*\)\s*\{[^\n]*\}/);
+  let esc;
+  if (!em) { t('esc 定义能从 index.html 提取', 'esc', false, '未匹配到 function esc'); }
+  else {
+    try { esc = eval(em[0] + '; esc'); }
+    catch (e) { t('esc 定义可求值', 'esc', false, String(e)); }
+  }
+  if (!esc) { /* skip：提取失败时不再用手写副本顶替，宁缺毋假 */ } else {
   t('esc 转义 & < > "', 'esc', esc('&<>"') === '&amp;&lt;&gt;&quot;', esc('&<>"'));
-  t("esc 不转义单引号（所有属性都用双引号包裹才安全）", 'esc', esc("'") === "'", esc("'"));
+  t("esc 转义单引号为 &#39;（与 index.html:557 真身一致）", 'esc', esc("'") === '&#39;', esc("'"));
   t('esc 处理 null/undefined/number', 'esc', esc(null) === '' && esc(undefined) === '' && esc(5) === '5', '');
   const sq = "'><img src=x onerror=alert(1)>";
   const attr = '<div data-x="' + esc(sq) + '">';
   t('双引号属性 + esc 后无法逃逸（无裸 > 出现在属性内）', 'esc', !/data-x="[^"]*"[^>]*<img/.test(attr), attr.slice(0, 80));
+  }
 }
 
 /* ------------------------------------------------------------------ 10. 幽灵 qid（core 不做题库校验） */

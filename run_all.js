@@ -52,7 +52,9 @@ const TESTS = [
   { f: 'verify_assets.js', g: 'core', min: 8, d: '素材指纹 + bank/json ↔ meta.js 副本一致性' },
 
   /* --- 浏览器：功能与交互 --- */
-  { f: 'test_e2e.js', g: 'browser', min: 20, d: '端到端主流程' },
+  // 2026-11-17：真 UI E2E 取代旧 test_e2e.js（memStore+vm 逻辑旅程，不驱动真实 UI，测评判为假 E2E）。
+  // 旧文件保留作逻辑旅程参考，但不再作为发布证据来源。
+  { f: 'test_e2e_ui.js', g: 'browser', min: 30, d: '真实 E2E（Playwright 驱动 UI：登录→做题→错题→统计→备份→导出导入）' },
   { f: 'test_ui.js', g: 'browser', min: 8, d: 'UI 结构与选择流程' },
   { f: 'test_p3.js', g: 'browser', min: 8, d: 'P3 轮修复点' },
   { f: 'test_p4.js', g: 'browser', min: 8, d: 'P4 轮修复点' },
