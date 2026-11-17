@@ -406,6 +406,13 @@ async function sectionMemory(browser) {
   const groups = [];
   let answeredTotal = 0;
   for (let i = 0; i < 5; i++) {
+    // 2026-11-17 修：上一轮若没成功关掉浮层（#groupDone 的点击被 catch 吞掉），
+    // 下一轮点清单卡片会被 #quiz 遮罩挡住 → locator.click 30s 超时，整段 FATAL。
+    // 进组前强制收起浮层，让"关不掉"变成可继续的显式状态。
+    if (await page.locator('#quiz.show').count()) {
+      await page.locator('#quizBack').click({ timeout: 5000 }).catch(function () { });
+      await page.waitForFunction(function () { return !document.getElementById('quiz').classList.contains('show'); }, null, { timeout: 10000 }).catch(function () { });
+    }
     let card = page.locator('#planList .card:not(.done)').first();
     if (!(await card.count())) {
       // 清单做完仍不足 5 组：用「加练」按钮补足（真实 UI 路径）

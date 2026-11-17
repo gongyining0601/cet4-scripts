@@ -1,8 +1,11 @@
 // 线上 P7.1 冒烟：注入 P6 旧 plan 验证迁移重算
 const path = require('path');
-const { chromium: loadChromium, EXE } = require('./_env');
+const { chromium: loadChromium, EXE, onlinePreflight, ONLINE_BASE } = require('./_env');
 const { chromium } = loadChromium();
 (async () => {
+  // 站点未部署/资源 404 时显式 ENV-SKIP，避免 0 断言被判假绿（部署后自动转真实校验）
+  const pre = await onlinePreflight(ONLINE_BASE);
+  if (!pre.ok) { console.log('ENV-SKIP: 线上站点未就绪（' + pre.reason + '），部署后重跑本用例'); return; }
   const browser = await chromium.launch({
     executablePath: EXE,
     args: ['--no-sandbox'],
@@ -12,7 +15,7 @@ const { chromium } = loadChromium();
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-  await page.goto('https://gongyining0601.github.io/cet4-trainer/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(ONLINE_BASE, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(12000);
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(6000);

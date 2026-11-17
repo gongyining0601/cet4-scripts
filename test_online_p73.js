@@ -1,10 +1,13 @@
 /* P7.3 线上冒烟：登录层 → 手机号登录 → 今日清单 → 考点表 → 积极文案 */
 const path = require('path');
-const { chromium: loadChromium, EXE } = require('./_env');
+const { chromium: loadChromium, EXE, onlinePreflight, ONLINE_BASE } = require('./_env');
 const { chromium } = loadChromium();
-const URL = 'https://gongyining0601.github.io/cet4-trainer/';
+const URL = ONLINE_BASE;
 
 (async () => {
+  // 站点未部署/资源 404 时显式 ENV-SKIP，避免 0 断言被判假绿（部署后自动转真实校验）
+  const pre = await onlinePreflight(URL);
+  if (!pre.ok) { console.log('ENV-SKIP: 线上站点未就绪（' + pre.reason + '），部署后重跑本用例'); return; }
   const browser = await chromium.launch({ executablePath: EXE, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const page = await browser.newPage({ viewport: { width: 420, height: 900 } });
   const errors = [];

@@ -249,6 +249,10 @@ function runOne(t) {
     let verdict;
     if (r.timedOut) verdict = 'TIMEOUT';
     else if (r.code === null) verdict = 'CRASH';
+    // 2026-11-17 新增：环境不具备（线上站点未部署 / 缺少可选依赖）由用例自己打印
+    // 「ENV-SKIP: 原因」并正常退出。既不算假绿（0 断言），也不算失败——
+    // 部署/装好依赖后同一条命令会自动转入真实校验，不需要改脚本。
+    else if (/^\s*(?:ENV-)?SKIP[:：]/m.test(r.out)) verdict = 'SKIP';
     else if (t.kind === 'dump') {
       // 工具型脚本：本身不做判定，只导出信息。它的价值是"bank 文件坏了就会崩"，
       // 因此要求退出码 0 且确实产出了内容；不参与断言闸门（否则会冤枉成假绿）。
@@ -261,9 +265,10 @@ function runOne(t) {
     else verdict = 'PASS';
 
     const pass = verdict === 'PASS' || verdict === 'DUMP-OK';
+    const skipReason = verdict === 'SKIP' ? (((r.out.match(/^\s*(?:ENV-)?SKIP[:：].*$/m) || [''])[0]) || '').trim() : '';
     rows.push({
       file: t.f, group: t.g, desc: t.d, optional: !!t.opt,
-      verdict: verdict, pass: pass,
+      verdict: verdict, pass: pass, skipReason: skipReason,
       exit: r.code, ms: r.ms, ok, fail, total, min: t.min,
       tail: r.out.split(/\r?\n/).filter(l => l.trim()).slice(-8).join(' ⏎ ').slice(0, 800),
     });
@@ -290,11 +295,14 @@ function runOne(t) {
   const hard = rows.filter(r => !r.pass && !r.optional);
   const fake = rows.filter(r => r.verdict === 'NO-ASSERT' || r.verdict === 'SHRUNK');
   const passed = rows.filter(r => r.pass).length;
+  const skipped = rows.filter(r => r.verdict === 'SKIP');
 
   console.log('\n================= 总计 =================');
-  console.log('  用例 ' + rows.length + ' 个：' + passed + ' 通过 / ' + (rows.length - passed) + ' 未通过');
+  console.log('  用例 ' + rows.length + ' 个：' + passed + ' 通过 / ' + (rows.length - passed - skipped.length) + ' 未通过' +
+    (skipped.length ? ' / ' + skipped.length + ' 环境跳过' : ''));
   console.log('  断言 ' + totalAssert + ' 条：' + totalOk + ' ok / ' + totalFail + ' fail');
   console.log('  假绿/缩水（0 断言或低于下限却"通过"）' + fake.length + ' 个' + (fake.length ? ' → ' + fake.map(r => r.file + '(' + r.verdict + ')').join(', ') : ''));
+  if (skipped.length) console.log('  环境跳过（非缺陷，环境就绪后自动转真实校验）' + skipped.length + ' 个 → ' + skipped.map(r => r.file + '（' + r.skipReason.replace(/^[^:：]*[:：]\s*/, '').slice(0, 60) + '）').join('，'));
   console.log('  必过项未通过 ' + hard.length + ' 个' + (hard.length ? ' → ' + hard.map(r => r.file + '(' + r.verdict + ')').join(', ') : ''));
   console.log('  总耗时 ' + ((Date.now() - t00) / 1000).toFixed(1) + 's');
 
@@ -304,7 +312,7 @@ function runOne(t) {
       meta: META,
       totals: {
         cases: rows.length, pass: passed, assertions: totalAssert, ok: totalOk, fail: totalFail,
-        fakeGreen: fake.length, hardFailed: hard.length,
+        fakeGreen: fake.length, hardFailed: hard.length, skipped: skipped.length,
       },
       rows,
     }, null, 2), 'utf8');

@@ -111,6 +111,36 @@ async function answerAllInQuiz(page) {
   return n.opt + n.cloze;
 }
 
+/* 线上用例的基地址：默认 GitHub Pages，部署换域名后用环境变量覆盖，无需改脚本。
+   例：set CET4_ONLINE_URL=https://gongyining.top/  再跑 run_all */
+const ONLINE_BASE = process.env.CET4_ONLINE_URL || 'https://gongyining0601.github.io/cet4-trainer/';
+
+/* 线上用例前置检查（2026-11-17）：站点没部署 / 关键资源 404 时，在线用例会以
+   0 断言收场 → run_all 判 NO-ASSERT（假绿），把"环境没就绪"误报成"测试有问题"。
+   这里先探一次首页与两个关键资源，不通就由调用方打印 ENV-SKIP 并正常退出；
+   部署完成后同一条命令会自动转入真实校验，不需要改脚本。 */
+async function onlinePreflight(base, timeoutMs) {
+  const t = timeoutMs || 12000;
+  const probe = async (u) => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), t);
+    try {
+      const r = await fetch(u, { signal: ac.signal, redirect: 'follow' });
+      return { ok: r.ok, status: r.status };
+    } catch (e) {
+      return { ok: false, status: 0, err: String((e && e.message) || e).split('\n')[0] };
+    } finally { clearTimeout(timer); }
+  };
+  const b = base.endsWith('/') ? base : base + '/';
+  const home = await probe(b);
+  if (!home.ok) return { ok: false, reason: '站点不可达或非 200（' + (home.status || home.err) + '）' };
+  for (const rel of ['core.js', 'bank/meta.js']) {
+    const r = await probe(b + rel);
+    if (!r.ok) return { ok: false, reason: '关键资源缺失 ' + rel + ' → ' + (r.status || r.err) };
+  }
+  return { ok: true };
+}
+
 async function ensurePaper(page, pid, timeoutMs) {
   return page.evaluate(({ pid, prefix, g, t }) => new Promise((res) => {
     const has = () => (window[g] || []).some((b) => b.id === pid);
@@ -185,4 +215,4 @@ function bankDigest(prefix) {
   return out;
 }
 
-module.exports = { chromium, EXE, fileUrl, ensurePaper, ensureAllPapers, bankDigest, planVersion, answerAllInQuiz };
+module.exports = { chromium, EXE, fileUrl, ensurePaper, ensureAllPapers, bankDigest, planVersion, answerAllInQuiz, onlinePreflight, ONLINE_BASE };
