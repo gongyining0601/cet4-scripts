@@ -111,9 +111,10 @@ async function answerAllInQuiz(page) {
   return n.opt + n.cloze;
 }
 
-/* 线上用例的基地址：默认 GitHub Pages，部署换域名后用环境变量覆盖，无需改脚本。
+/* 线上用例的基地址：默认 GitHub Pages（实测 /cet4/ 才是活的，早期写的
+   /cet4-trainer/ 已 404）。换域名（如 gongyining.top）用环境变量覆盖，无需改脚本：
    例：set CET4_ONLINE_URL=https://gongyining.top/  再跑 run_all */
-const ONLINE_BASE = process.env.CET4_ONLINE_URL || 'https://gongyining0601.github.io/cet4-trainer/';
+const ONLINE_BASE = process.env.CET4_ONLINE_URL || 'https://gongyining0601.github.io/cet4/';
 
 /* 线上用例前置检查（2026-11-17）：站点没部署 / 关键资源 404 时，在线用例会以
    0 断言收场 → run_all 判 NO-ASSERT（假绿），把"环境没就绪"误报成"测试有问题"。
