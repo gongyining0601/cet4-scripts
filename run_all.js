@@ -51,6 +51,12 @@ const TESTS = [
   { f: 'test_coverage.js', g: 'core', min: 2, d: 'core.js 覆盖率门禁（NODE_V8_COVERAGE，行/分支 ≥80%）' },
   { f: 'check_divergence.js', g: 'core', min: 20, d: '双项目防漏修：共享内核字节一致 + 修复点清单' },
   { f: 'verify_assets.js', g: 'core', min: 8, d: '素材指纹 + bank/json ↔ meta.js 副本一致性' },
+  // 2026-11-17 补注册：这 6 个测试此前"写在库里但从没被执行"（run_all 漏登记），
+  // 等于覆盖缺口。逐个单独跑过：20333/60/6/8/4/15 条断言全过，实测耗时均 < 20s。
+  { f: 'test_bank_contract.js', g: 'core', min: 1000, d: '题库契约：字段形状/解析/答案一致性/全局 qid 唯一（20333 条）' },
+  { f: 'test_journey_logic.js', g: 'core', min: 50, d: '逻辑级旅程：清单生成/判分/错题/热力图/正确率（不驱动 UI）' },
+  { f: 'test_contrast_light.js', g: 'core', min: 5, d: '浅色主题对比度 ≥ 4.5:1（WCAG AA）' },
+  { f: 'test_mutation.js', g: 'core', min: 12, d: '变异测试：15 个变异体必须全被杀（存活即断言不足）' },
 
   /* --- 浏览器：功能与交互 --- */
   // 2026-11-17：真 UI E2E 取代旧 test_e2e.js（memStore+vm 逻辑旅程，不驱动真实 UI，测评判为假 E2E）。
@@ -67,6 +73,9 @@ const TESTS = [
   { f: 'test_listening_player.js', g: 'browser', min: 8, d: '听力播放器' },
   { f: 'test_timer.js', g: 'browser', min: 8, d: '计时器/限时' },
   { f: 'test_student_journey.js', g: 'browser', min: 9, d: '学生完整旅程' },
+  // 2026-11-17 补注册：移动端模拟与无障碍取证此前只手工跑，未进回归
+  { f: 'test_mobile.js', g: 'browser', min: 6, d: '移动端模拟（375/390/414 视口做题链路；真机仍未实测）' },
+  { f: 'test_a11y.js', g: 'browser', min: 3, d: '无障碍取证：35 个交互控件访问名/alt/landmark/键盘可达' },
   { f: 'test_perf_audit.js', g: 'browser', min: 10, d: '性能审计' },
   { f: 'test_release_audit.js', g: 'browser', min: 10, d: '发布前审计' },
   // 注意：这个套件是"聚合判定"，多数断言本身就是一整类检查的结论（脏数据/导出/边界/完整旅程），
