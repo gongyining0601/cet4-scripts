@@ -623,6 +623,13 @@ const m2 = await metrics(pageM);   // metrics() 内部已 collectGarbage
   for (let g = 0; g < 5; g++) {
     const o = await openFirstOpenGroup(page2);
     if (!o) { chk('A5 第 ' + (g + 1) + ' 组可打开', false, '未找到可开始的题组'); break; }
+    // 2026-11-17 修：按需加载——点「开始」只是拉起浮层，题目要等卷脚本注入完才渲染。
+    // 不等就采样 .opt 会拿到空列表 → answerSome 答不上题 → #groupSubmit 保持 disabled
+    // → #groupDone 10s 超时（实测第 2 组「仔细阅读·整篇」就这样假失败）。
+    await page2.waitForFunction(() => {
+      const b = document.getElementById('quizBody');
+      return !!b && (b.querySelectorAll('.opt').length || b.querySelectorAll('.cloze-slot').length || b.querySelector('#essayTa'));
+    }, null, { timeout: 20000 }).catch(() => { });
     // 点选 3 次计时
     const q3 = await page2.evaluate(() => {
       const seen = {}, out = [];
@@ -813,6 +820,12 @@ async function sectionB() {
     await shot(page, 'vp-' + vp.name + '-today');
     // 答题页
     const o = await openFirstOpenGroup(page);
+    // 2026-11-17 修：与 A5 同源的竞态——不等卷脚本注入完就采样，opts=0 假失败
+    //（实测 1920x1080/1366x768/414x896 三档随机翻车，768/375/390 又恰好赶上了，纯时运）。
+    await page.waitForFunction(() => {
+      const b = document.getElementById('quizBody');
+      return !!b && (b.querySelectorAll('.opt').length || b.querySelectorAll('.cloze-slot').length || b.querySelector('#essayTa'));
+    }, null, { timeout: 20000 }).catch(() => { });
     const quiz = await page.evaluate(() => window.__scan());
     const qinfo = await page.evaluate(() => window.__t.quiz());
     await shot(page, 'vp-' + vp.name + '-quiz');

@@ -72,6 +72,45 @@ const BANK_PREFIX = 'cet4-';
 const BANK_GLOBAL = 'CET4_BANKS';
 const META_GLOBAL = 'CET4_META';
 
+/* 从 app/core.js 解析当前清单结构版本（自 CET6 同版 _env.js 移植）。
+   retest_xss 等脚本注入 plan 时必须带这个 v，写死旧值会被 ensurePlan 丢弃重算。 */
+function planVersion() {
+  const p = path.join(__dirname, '..', 'app', 'core.js');
+  const m = /CORE\.PLAN_VERSION\s*=\s*(\d+)/.exec(fs.readFileSync(p, 'utf8'));
+  if (!m) throw new Error('无法从 app/core.js 解析 CORE.PLAN_VERSION');
+  return Number(m[1]);
+}
+
+/* 把当前浮层里的题全部作答（客观题 + 选词填空，自 CET6 同版 _env.js 移植）。
+   老的 answerAll 只点 .opt，遇到「选词填空」组（词库点选）一题都答不上 →
+   #groupSubmit 永远 disabled → click 死等到超时。
+   选词填空的交互是：先点空格 .cloze-slot（进入聚焦），再点词库 .wb-chip 填入。 */
+async function answerAllInQuiz(page) {
+  const n = await page.evaluate(() => {
+    const body = document.getElementById('quizBody');
+    if (!body) return { opt: 0, cloze: 0 };
+    let opt = 0, cloze = 0;
+    // 1) 选择题：每题点第一个选项（已选过的不重复点）
+    const answeredQ = {};
+    Array.prototype.forEach.call(body.querySelectorAll('.opt[data-q]'), (b) => {
+      const q = b.getAttribute('data-q');
+      if (!answeredQ[q]) { answeredQ[q] = 1; b.click(); opt++; }
+    });
+    // 2) 选词填空：空格与词库一一配对（先点空格聚焦，再点词填入）
+    const chips = Array.prototype.slice.call(body.querySelectorAll('.wb-chip'));
+    Array.prototype.forEach.call(body.querySelectorAll('.cloze-slot[data-qno]'), (slot, i) => {
+      if (slot.getAttribute('data-picked')) return;
+      const chip = chips[i] || chips[chips.length - 1];
+      if (!chip) return;
+      slot.click();
+      chip.click();
+      if (slot.getAttribute('data-picked')) cloze++;
+    });
+    return { opt, cloze };
+  });
+  return n.opt + n.cloze;
+}
+
 async function ensurePaper(page, pid, timeoutMs) {
   return page.evaluate(({ pid, prefix, g, t }) => new Promise((res) => {
     const has = () => (window[g] || []).some((b) => b.id === pid);
@@ -146,4 +185,4 @@ function bankDigest(prefix) {
   return out;
 }
 
-module.exports = { chromium, EXE, fileUrl, ensurePaper, ensureAllPapers, bankDigest };
+module.exports = { chromium, EXE, fileUrl, ensurePaper, ensureAllPapers, bankDigest, planVersion, answerAllInQuiz };

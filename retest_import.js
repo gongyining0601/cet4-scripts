@@ -362,9 +362,29 @@ const wrongEntry = (o) => Object.assign({ addedAt: TODAY, box: 0, wrongCount: 1,
       const { ctx, page, logs } = await newCtx(browser);
       await boot(page, baseState());
       const b = page.locator('#planList .card button').first();
-      if (await b.count()) { await b.click(); await page.waitForTimeout(350); }
-      const opt = page.locator('#quizBody .opt').first();
-      if (await opt.count()) { await opt.click(); await page.waitForTimeout(250); }
+      if (await b.count()) { await b.click(); }
+      // 按需加载：点「开始」只是拉起浮层，题目要等卷脚本注入完才渲染 → 必须等 .opt / .wb-chip 出现
+      // 2026-11-17 修（自 CET6 移植 + CET4 特有）：CET4 首卡可能是选词填空——
+      // 该题型只有 .cloze-slot 空格 + .wb-chip 词库芯片，根本没有 .opt 选项按钮，
+      // 旧版只点 .opt 会点了空气 → 草稿永远为空 → 假失败（实测 [null×6]）。
+      const appeared = await page.waitForSelector('#quizBody .opt, #quizBody .wb-chip', { timeout: 20000 }).then(() => true).catch(() => false);
+      let answered = 0, mode = '';
+      if (appeared) {
+        const opt = page.locator('#quizBody .opt').first();
+        if (await opt.count()) {
+          mode = 'opt';
+          await opt.click(); await page.waitForTimeout(250);
+          answered = await page.evaluate(() => document.querySelectorAll('#quizBody .opt.sel').length);
+        } else {
+          mode = 'cloze';
+          await page.locator('#quizBody .cloze-slot').first().click();
+          await page.waitForTimeout(200);
+          await page.locator('#quizBody .wb-chip').first().click();
+          await page.waitForTimeout(250);
+          answered = await page.evaluate(() => document.querySelectorAll('#quizBody .cloze-slot[data-picked]:not([data-picked=""])').length);
+        }
+      }
+      log('   作答路径：出现=' + appeared + ' 模式=' + mode + ' 已答=' + answered);
       await page.screenshot({ path: path.join(DOCS, 'retest-security-draft-inprogress.png') });
       await page.locator('#quizBack').click();
       await page.waitForTimeout(300);
@@ -374,6 +394,8 @@ const wrongEntry = (o) => Object.assign({ addedAt: TODAY, box: 0, wrongCount: 1,
       const txt = fs.readFileSync(p2, 'utf8');
       let parseOk = true, obj = null; try { obj = JSON.parse(txt); } catch (e) { parseOk = false; }
       t('作答+退出后导出 JSON 可解析（无循环引用）', '序列化', parseOk, 'len=' + txt.length);
+      t('作答确实落进（.opt 选中或选词空格已填；前置条件成立，否则下一条会假失败）', '序列化',
+        answered >= 1, 'mode=' + mode + ' answered=' + answered + '，出现=' + appeared);
       t('草稿已写入 plan.items[].draft', '序列化',
         !!obj && !!obj.plan && obj.plan.items.some(it => it.draft && Object.keys(it.draft).length > 0),
         obj && obj.plan ? S(obj.plan.items.map(it => it.draft)) : 'no-plan');

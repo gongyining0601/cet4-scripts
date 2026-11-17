@@ -96,7 +96,7 @@ const TESTS = [
   { f: 'retest_pwa_probe.js', g: 'probe', min: 0, kind: 'dump', d: 'PWA 单点定位探针（只读取证，无断言）' },
   { f: 'retest_journey.js', g: 'probe', min: 1, d: '旅程取证' },
   { f: 'retest_misc.js', g: 'probe', min: 1, d: '杂项取证' },
-  { f: 'retest_probe.js', g: 'probe', min: 1, d: '通用探针' },
+  { f: 'retest_probe.js', g: 'probe', min: 0, kind: 'dump', d: '通用定位探针（只读取证，无断言）' },
   { f: 'retest_reach.js', g: 'probe', min: 1, d: '可达性取证' },
 ];
 

@@ -12,7 +12,7 @@
    ============================================================================ */
 const fs = require('fs');
 const path = require('path');
-const { chromium: loadChromium, EXE, fileUrl } = require('./_env');
+const { chromium: loadChromium, EXE, fileUrl, ensurePaper, planVersion } = require('./_env');
 const { chromium } = loadChromium();
 
 const ROOT = path.join(__dirname, '..');
@@ -24,6 +24,9 @@ const pad = n => (n < 10 ? '0' + n : '' + n);
 const d0 = new Date();
 const TODAY = d0.getFullYear() + '-' + pad(d0.getMonth() + 1) + '-' + pad(d0.getDate());
 const PAPER = '2026-06-1';
+/* 注入 plan 的 v 必须等于当前 PLAN_VERSION，否则 ensurePlan 会整份丢弃重算
+   （原来写死 v:3，而版本已到 8 —— 注入的清单从未生效，浮层里是自动生成的组）。 */
+const PLANV = planVersion();
 const PAY = '<img src=x onerror="__probe(\'REACH\')">';
 
 const LINES = [];
@@ -32,7 +35,7 @@ const R = { meta: {}, rows: [], summary: {} };
 async function shot(page, n) { try { await page.screenshot({ path: path.join(DOCS, 'retest-security-reach-' + n + '.png') }); } catch (e) { } }
 const stateOf = page => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('cet4_p1_state_v1_9203') || 'null'); } catch (e) { return null; } });
 function baseState(e) { return Object.assign({ version: 1, history: {}, papers: {}, wrongbook: {}, plan: null, essays: {}, hl: {}, lastBackup: '' }, e || {}); }
-const planWith = items => ({ date: TODAY, v: 3, items });
+const planWith = items => ({ date: TODAY, v: PLANV, items });
 
 async function newCtx(browser) {
   const ctx = await browser.newContext({ viewport: { width: 430, height: 940 } });
@@ -89,7 +92,7 @@ function record(id, point, container, res, note) {
     /* ---- 1) plan.items[].label：字符串型，normalizeState 限长保留 → 纯 esc 路径 ---- */
     log('================ 状态路径（字符串字段，normalizeState 限长保留）================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await boot(page, baseState({ plan: planWith([{ key: 'k1', type: 'reading', qids: [PAPER + '-r-46'], paperId: PAPER, label: PAY, done: false, minutes: 0 }]) }));
       const st = await stateOf(page);
       const labelKept = !!(st.plan && st.plan.items[0] && st.plan.items[0].label === PAY);
@@ -103,15 +106,17 @@ function record(id, point, container, res, note) {
     }
     /* ---- 2) essays.writing.text：限长 20000 保留 → textarea ---- */
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await boot(page, baseState({
         plan: planWith([{ key: 'w1', type: 'writing', qids: [], paperId: PAPER, done: false, minutes: 0, draft: {} }]),
         essays: { writing: { lastAt: TODAY, text: PAY + ' essay body' } },
       }));
       await page.locator('#planList .card button').first().click();
-      await page.waitForTimeout(500);
+      /* 按需加载：写译组的 textarea 要等卷脚本注入才渲染，固定 500ms 不够稳。
+         等到 #essayTa 真的出现（或超时）再取证，避免把"还没渲染"误判成"容器缺失"。 */
+      await page.waitForSelector('#essayTa', { timeout: 20000 }).catch(() => { });
+      await page.waitForTimeout(200);
       const res = await probe(page, '#essayTa');
-      const res2 = await probe(page, '#quizBody');
       record('S2', 'essays.writing.text', '#essayTa(textarea)', res, '');
       R.rows.push({ id: 'S3', point: 'essays.writing.text → 容器级（仅供参考）', container: '#quizBody', ok: true, informational: true, note: 'textarea 的 value 不计入容器 innerText；S2 已在元素级验证 reached+escaped' });
       await shot(page, 'essay-textarea');
@@ -120,7 +125,7 @@ function record(id, point, container, res, note) {
     /* ---- 3) papers/wrongbook/history 数字字段：归一化即消除（列出取值）---- */
     log('\n================ 状态路径（数字字段，normalizeState 的 num() 先消除）================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await boot(page, baseState({
         history: { [TODAY]: { minutes: PAY, done: true, qCount: PAY, right: PAY, timed: PAY, timedWithin: 0, timedSec: 0 } },
         papers: { [PAPER + '-r-46']: { seen: PAY, right: PAY, wrong: 0, lastAt: TODAY, lastResult: 'right', lastAnswer: PAY } },
@@ -146,8 +151,10 @@ function record(id, point, container, res, note) {
     /* ---- 4) 题库字段（绕过 normalizeState 的纯 esc 路径）---- */
     log('\n================ 题库路径（完全绕过 normalizeState，只有 esc 这道防线）================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await boot(page, baseState({ plan: planWith([{ key: 'r1', type: 'reading', qids: [PAPER + '-r-46'], paperId: PAPER, label: '阅读', done: false, minutes: 0 }]) }));
+      // 按需加载：篡改题库前先注入目标卷，否则 BANKS 为空、b.questions 取到 undefined
+      if (!await ensurePaper(page, PAPER)) throw new Error('卷 ' + PAPER + ' 未能加载，题库路径用例无法进行');
       const applied = await page.evaluate(({ pay }) => {
         const b = (window.CET4_BANKS || []).find(x => x.id === '2026-06-1');
         const q = (b.questions || []).find(x => x.id === '2026-06-1-r-46');
@@ -168,19 +175,22 @@ function record(id, point, container, res, note) {
       await page.evaluate(() => { const b = document.getElementById('quizBack'); if (b) b.click(); });
       await page.waitForTimeout(250);
       // 范文：先把 plan 换成写作组并 reload（reload 会丢掉内存里对题库的篡改），再改题库字段
-      await page.evaluate(() => {
+      await page.evaluate(({ pv }) => {
         const s = JSON.parse(localStorage.getItem('cet4_p1_state_v1_9203'));
-        s.plan = { date: s.plan.date, v: 3, items: [{ key: 'w1', type: 'writing', qids: [], paperId: '2026-06-1', done: false, minutes: 0 }] };
+        s.plan = { date: s.plan.date, v: pv, items: [{ key: 'w1', type: 'writing', qids: [], paperId: '2026-06-1', done: false, minutes: 0 }] };
         localStorage.setItem('cet4_p1_state_v1_9203', JSON.stringify(s));
-      }, {});
+      }, { pv: PLANV });
       await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(900);
+      // reload 会清掉上一个上下文里对题库的内存篡改，且按需加载下 BANKS 重新为空 → 重新注入
+      if (!await ensurePaper(page, PAPER)) throw new Error('卷 ' + PAPER + ' 重载后未能加载，范文用例无法进行');
       const w = await page.evaluate(({ pay }) => {
         const b = (window.CET4_BANKS || []).find(x => x.id === '2026-06-1');
         b.writing.sample = pay + ' sample body';
         b.writing.prompt = pay + ' prompt';
         return { sample: b.writing.sample, prompt: b.writing.prompt };
       }, { pay: PAY });
-      await page.locator('#planList .card button').first().click(); await page.waitForTimeout(500);
+      await page.locator('#planList .card button').first().click(); await page.waitForTimeout(300);
+      await page.waitForSelector('#essaySample', { timeout: 20000 }).catch(() => { });
       await page.locator('#essaySample').click(); await page.waitForTimeout(400);
       const res3 = await probe(page, '#sampleBox');
       record('B3', 'bank writing.sample', '#sampleBox', res3, 'applied=' + JSON.stringify(w.sample).slice(0, 40));
@@ -192,18 +202,18 @@ function record(id, point, container, res, note) {
     /* ---- 5) hl：非注入面（匹配键 + createTextNode）---- */
     log('\n================ hl[pid]：路径分析 + 实测 ================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       const pid = PAPER + '#reading#read0';
       await boot(page, baseState({
         plan: planWith([{ key: 'r1', type: 'reading', qids: [PAPER + '-r-46'], paperId: PAPER, label: '阅读', done: false, minutes: 0 }]),
         hl: { [pid]: [PAY] },
       }));
-      const st = await stateOf(page);
+      const _st = await stateOf(page);
       await page.locator('#planList .card button').first().click();
       await page.waitForTimeout(600);
       const res = await probe(page, '#quizBody');
       // 另测：hl 串确实命中原文时，插入的是 mark 且内容为原文（createTextNode，不解析 HTML）
-      const hit = await page.evaluate(({ pid }) => {
+      const _hit = await page.evaluate(({ pid }) => {
         const p = document.querySelector('[data-pid]');
         if (!p) return { no: 'no-passage' };
         const txt = p.innerText || '';
@@ -226,7 +236,7 @@ function record(id, point, container, res, note) {
     /* ---- 6) 登录编号：输入校验拦在 DOM 之前 ---- */
     log('\n================ 登录编号：校验拦在 DOM 之前 ================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await page.goto(URL, { waitUntil: 'load' });
       await page.waitForSelector('#loginMask', { timeout: 30000 });
       await page.locator('#phoneInput').fill(PAY);
@@ -242,7 +252,7 @@ function record(id, point, container, res, note) {
     /* ---- 7) 幽灵 qid 键：wrongRow 守卫 ---- */
     log('\n================ 幽灵 qid（状态键）不得渲染 ================');
     {
-      const { ctx, page, logs } = await newCtx(browser);
+      const { ctx, page, _logs } = await newCtx(browser);
       await boot(page, baseState({ wrongbook: { [PAY]: { addedAt: TODAY, box: 0, wrongCount: 1, due: TODAY, ease: 2.5, iv: 1, streak: 0 } } }));
       await page.evaluate(() => { const b = document.querySelector('nav button[data-p="wrong"]'); if (b) b.click(); }); await page.waitForTimeout(350);
       const info = await page.evaluate(() => ({ els: document.querySelectorAll('#dueList img, #allWrongList img').length, pwned: window.__pwned, rows: document.querySelectorAll('#dueList .wb-item, #allWrongList .wb-item').length, summary: document.getElementById('wrongSummary').textContent }));
@@ -255,6 +265,9 @@ function record(id, point, container, res, note) {
     R.summary = { rows: R.rows.length, failed: bad.length, failedDetail: bad.map(x => x.id + ' ' + x.point + ' → ' + x.container) };
     log('\n================ 汇总 ================');
     log(`  可达性检查 ${R.rows.length} 组；未通过 ${bad.length} 组`);
+    // 2026-11-17 修：每组结论落成 run_all 可计数的标准断言行（原来只打 ✗ 失败行，
+    // 全过时 0 断言被误判 NO-ASSERT —— 与 retest_xss 同类的"格式假绿/假红"问题）。
+    R.rows.forEach(x => log(`  [${x.ok === false ? 'FAIL' : 'PASS'}] 可达性 · ${x.id} ${x.point}${x.ok === false ? ' → ' + (x.container || '') : ''}`));
     bad.forEach(x => log('   ✗ ' + x.id + ' ' + x.point));
     const reachedAny = R.rows.filter(x => x.reached === true).length;
     log(`  其中确实"payload 进入 DOM 并被转义"的组数 = ${reachedAny}（其余为归一化/校验阶段即拦截）`);
