@@ -1,3 +1,7 @@
+/* 2026-11-17 退役：本脚本是"只打印不断言"的老探针，且前提已被 v15 摧毁——
+   首屏按需加载不会自动载 76 卷（p72 等 76 卷必超时；p71 取 p1.questions 直接抛错）。
+   它要验的事本地已有更强断言覆盖：p71→test_p7fix.js，p72→test_p72.js，p73→test_p73.js；
+   真实 https 链路由 test_online.js 承担。文件保留作历史证据，已移出 run_all 回归清单。 */
 // 线上 P7.1 冒烟：注入 P6 旧 plan 验证迁移重算
 const path = require('path');
 const { chromium: loadChromium, EXE, onlinePreflight, ONLINE_BASE } = require('./_env');

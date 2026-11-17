@@ -77,10 +77,13 @@ const TESTS = [
   { f: 'test_round3_interaction.js', g: 'browser', min: 150, d: '第三轮 · 交互回归' },
 
   /* --- 网络/离线/兼容：依赖外部条件，失败注明为条件性 --- */
-  { f: 'test_online.js', g: 'net', min: 1, d: '在线环境', opt: 1 },
-  { f: 'test_online_p71.js', g: 'net', min: 1, d: '在线 P7-1', opt: 1 },
-  { f: 'test_online_p72.js', g: 'net', min: 1, d: '在线 P7-2', opt: 1 },
-  { f: 'test_online_p73.js', g: 'net', min: 1, d: '在线 P7-3', opt: 1 },
+  { f: 'test_online.js', g: 'net', min: 1, d: '在线环境（真实断言：登录→清单→进组→作答→判分）', opt: 1 },
+  // 2026-11-17 退役 test_online_p71/p72/p73：
+  //   三者都是"只打印不断言"的老探针，且前提已被 v15 推翻（首屏按需加载，不会自动载 76 卷 →
+  //   p72 等 76 卷必超时、p71 取 p1.questions 直接抛 TypeError）。
+  //   它们各自要验的事本地已有断言更强的覆盖：p71→test_p7fix.js（旧 plan 重算）,
+  //   p72→test_p72.js（写作体检）, p73→test_p73.js（考点表/文案）；
+  //   真实 https 链路由 test_online.js 承担。保留文件作历史证据，不再进回归清单。
   { f: 'test_offline_https.js', g: 'net', min: 1, d: 'HTTPS/离线', opt: 1 },
   { f: 'test_offline_perf.js', g: 'net', min: 1, d: '离线性能', opt: 1 },
   { f: 'test_firefox_playwright.js', g: 'net', min: 1, d: 'Firefox 兼容', opt: 1 },
